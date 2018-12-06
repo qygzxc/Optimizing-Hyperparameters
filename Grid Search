@@ -1,0 +1,69 @@
+from keras.models import Sequential
+from keras.layers import Dense
+
+
+def create_model(batch_size=10, epochs=10, optimizer='SGD', activation='relu', hidden_layers=1, neurons=10):
+    model = Sequential()
+
+    model.add(Dense(neurons, input_dim=34,
+                    activation=activation))  # Add the first hidden layer. Let's assume we have 16 inputs, that's why input_dim=16
+
+    for i in range(hidden_layers - 1):  # here we are adding the addiitonal hidden layers
+        model.add(Dense(neurons,
+                        activation=activation))  # note that the number of neurons in the hidden layer (here 10) could be a hyperparameter too.
+
+    model.add(Dense(neurons, activation=activation))  # this is our output layer.
+    model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+    return model
+
+
+from keras.wrappers.scikit_learn import KerasClassifier
+from keras.datasets import mnist
+from keras.utils import np_utils
+from sklearn.model_selection import RandomizedSearchCV, cross_val_score
+from sklearn.decomposition import PCA
+import numpy as np
+
+
+(X_train, Y_train), (X_test, Y_test) = mnist.load_data()
+num_of_pixels = X_train.shape[1] * X_train.shape[2]
+X_train = X_train.reshape(X_train.shape[0], num_of_pixels).astype('float32')
+X_test = X_test.reshape(X_test.shape[0], num_of_pixels).astype('float32')
+X_train = X_train / 255
+X_test = X_test / 255
+Y_train = np_utils.to_categorical(Y_train)
+Y_test = np_utils.to_categorical(Y_test)
+num_classes = Y_test.shape[1]
+
+# PCA Algorithm
+var_pres = .75
+pca = PCA(n_components=var_pres)
+X_train_PCA = pca.fit_transform(X_train)
+num_of_pixels = int(X_train_PCA.shape[1])
+
+batch_size = [10, 20, 40]
+epochs = [10, 15, 20]
+optimizer = ['SGD', 'RMSprop', 'Adagrad', 'Adadelta']
+activation = ['relu', 'softmax','softplus', 'sigmoid']
+hidden_layers = [1, 2]
+neurons = [10]
+final_num_of_pixels = num_of_pixels
+print(final_num_of_pixels)
+
+
+my_classifier = KerasClassifier(build_fn=create_model, verbose=0)   # use KerasRegressor for regression models and problems
+
+param_grid = dict(batch_size=batch_size, epochs=epochs, optimizer=optimizer,
+                  activation=activation, hidden_layers=hidden_layers,
+                  neurons=neurons)
+print(param_grid)
+randomsearch = RandomizedSearchCV(estimator=my_classifier, param_distributions=param_grid, cv=3)
+
+randomsearch_result = randomsearch.fit(X_train_PCA, Y_train)
+
+# hyperparameters = dict(batch_size=batch_size, epochs=epochs,
+#                   optimizer=optimizer, activation=activation,
+#                   hidden_layers=hidden_layers, neurons = neurons,
+#                   final_num_of_pixels=final_num_of_pixels)
+
+print(randomsearch_result.best_params_)
