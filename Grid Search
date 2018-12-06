@@ -1,26 +1,25 @@
 from keras.models import Sequential
 from keras.layers import Dense
 
+def create_model(batch_size=10, epochs=10, optimizer='SGD', activation='relu' , hidden_layers=1, neurons=10):
+    
+  model = Sequential()
+  
+  model.add(Dense(neurons, input_dim=34, activation=activation))  # Add the first hidden layer. Let's assume we have 16 inputs, that's why input_dim=16
 
-def create_model(batch_size=10, epochs=10, optimizer='SGD', activation='relu', hidden_layers=1, neurons=10):
-    model = Sequential()
-
-    model.add(Dense(neurons, input_dim=34,
-                    activation=activation))  # Add the first hidden layer. Let's assume we have 16 inputs, that's why input_dim=16
-
-    for i in range(hidden_layers - 1):  # here we are adding the addiitonal hidden layers
-        model.add(Dense(neurons,
-                        activation=activation))  # note that the number of neurons in the hidden layer (here 10) could be a hyperparameter too.
-
-    model.add(Dense(neurons, activation=activation))  # this is our output layer.
-    model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    return model
+  for i in range(hidden_layers-1):                          # here we are adding the addiitonal hidden layers
+      model.add(Dense(neurons, activation=activation))            # note that the number of neurons in the hidden layer (here 10) could be a hyperparameter too.
 
 
-from keras.wrappers.scikit_learn import KerasClassifier
+  model.add(Dense(neurons, activation=activation))                    #this is our output layer. 
+  model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=
+  ['accuracy'])
+  return model
+  
+  from keras.wrappers.scikit_learn import KerasClassifier
 from keras.datasets import mnist
 from keras.utils import np_utils
-from sklearn.model_selection import RandomizedSearchCV, cross_val_score
+from sklearn.model_selection import GridSearchCV, cross_val_score
 from sklearn.decomposition import PCA
 import numpy as np
 
@@ -41,11 +40,11 @@ pca = PCA(n_components=var_pres)
 X_train_PCA = pca.fit_transform(X_train)
 num_of_pixels = int(X_train_PCA.shape[1])
 
-batch_size = [10, 20, 40]
+batch_size = [10,20, 40]
 epochs = [10, 15, 20]
 optimizer = ['SGD', 'RMSprop', 'Adagrad', 'Adadelta']
 activation = ['relu', 'softmax','softplus', 'sigmoid']
-hidden_layers = [1, 2]
+hidden_layers = [1,2]
 neurons = [10]
 final_num_of_pixels = num_of_pixels
 print(final_num_of_pixels)
@@ -57,13 +56,13 @@ param_grid = dict(batch_size=batch_size, epochs=epochs, optimizer=optimizer,
                   activation=activation, hidden_layers=hidden_layers,
                   neurons=neurons)
 print(param_grid)
-randomsearch = RandomizedSearchCV(estimator=my_classifier, param_distributions=param_grid, cv=3)
+grid = GridSearchCV(estimator=my_classifier, param_grid=param_grid) 
 
-randomsearch_result = randomsearch.fit(X_train_PCA, Y_train)
+grid_result = grid.fit(X_train_PCA, Y_train) #Error Here
 
 # hyperparameters = dict(batch_size=batch_size, epochs=epochs,
 #                   optimizer=optimizer, activation=activation,
 #                   hidden_layers=hidden_layers, neurons = neurons,
 #                   final_num_of_pixels=final_num_of_pixels)
 
-print(randomsearch_result.best_params_)
+print(grid_result.best_params_)
