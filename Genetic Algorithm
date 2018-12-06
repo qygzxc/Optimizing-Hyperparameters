@@ -1,0 +1,429 @@
+# Lots of this code is attributed to https://blog.coast.ai/lets-evolve-a-neural-network-with-a-genetic-algorithm-code-included-8809bece164
+# GA Class
+
+from keras.wrappers.scikit_learn import KerasClassifier
+from keras.datasets import mnist
+from keras.utils import np_utils
+from sklearn.decomposition import PCA
+from keras.models import Sequential
+from keras.layers import Dense, Dropout
+from keras.callbacks import EarlyStopping
+import numpy as np
+
+early_stopper = EarlyStopping(patience=5)
+np.random.seed(42)
+
+# Load and format MNIST data
+(X_train, Y_train), (X_test, Y_test) = mnist.load_data()
+num_of_pixels = X_train.shape[1] * X_train.shape[2]
+X_train = X_train.reshape(X_train.shape[0], num_of_pixels).astype('float32')
+X_test = X_test.reshape(X_test.shape[0], num_of_pixels).astype('float32')
+X_train = X_train / 255
+X_test = X_test / 255
+Y_train = np_utils.to_categorical(Y_train)
+Y_test = np_utils.to_categorical(Y_test)
+num_classes = Y_test.shape[1]
+
+
+# PCA Algorithm to improve efficiency
+var_pres = 0.75
+
+
+def PCAdata(X_train, X_test):
+    """
+
+    :param X_train: 60000 length-784 arrays
+    :param X_test: 10000 length-784 arrays
+    :return:
+             X_train_PCA (array): 60000 length-34 arrays
+             X_test (array): 10000 length-34 arrays
+             new_num_of_pixels (int): Array Size
+
+    """
+
+    pca = PCA(n_components=var_pres)
+    X_train_PCA = pca.fit_transform(X_train)
+    X_test_PCA = pca.transform(X_test)
+    data_shape = X_train_PCA.shape
+    new_num_of_pixels = X_train_PCA.shape[1]
+    return X_train_PCA, X_test_PCA, data_shape, new_num_of_pixels
+
+
+X_train_PCA, X_test_PCA, data_shape, new_num_of_pixels = PCAdata(X_train, X_test)
+
+#######################################
+# Initial Parameters
+batch_size = 128
+epochs = 10
+optimizer = 'SGD'
+activation = 'relu'
+hidden_layers = 1
+neurons = 10
+n_classes = 10
+#######################################
+
+
+# Training Class
+class Train:
+    # Start by compiling the data to a sequential
+    def create_model(self, network, n_classes, data_shape):
+
+        """
+
+        :param network: (dict) all the hyperparameters
+        :param n_classes: Number of classes
+        :param data_shape: Shape of data
+
+        :return: The prepared model
+
+
+        """
+
+        n_layers = network['n_layers']
+        n_neurons = network['n_neurons']
+        activation = network['activation']
+        optimizer = network['optimizer']
+
+        model = Sequential()
+
+        # Add the first layer
+        model.add(Dense(n_neurons, activation=activation, input_shape=data_shape))
+
+        #  Adding neural layers
+        for i in range(n_layers-1):
+            # Adding middle layer
+            model.add(Dense(n_neurons, activation=activation))
+
+        # Output layer
+        model.add(Dense(n_neurons, activation=activation))
+        model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+
+        return model
+
+    def train_and_score(self, network):
+
+        """
+
+        :param network: (dict) all the hyperparameters
+        :return: Scoring value
+
+        """
+
+        model = Train.create_model(self, network, n_classes, data_shape)
+
+        model.fit(X_train_PCA, Y_train, batch_size=batch_size, epochs=10000, verbose=0,
+                  validation_data=(X_test_PCA, X_test), callbacks=[early_stopper])
+        score = model.evaluate(X_test_PCA, Y_test, verbose=0)
+        return score[1]  # score[1] returns accuracy, score[0] returns loss
+
+
+# Now, lets make the network of hyperparameters (the dictionary)
+import random
+
+
+class Network:
+
+    """ Defining the dictionary of hyperparameters. Call the dictionary a network"""
+
+    def __init__(self, param_choices=None):
+        """
+
+        :param param_choices: (dict) containing the hyperparameters for the model. Contains:
+            n_layers (list)
+            n_neurons (list)
+            activation (list)
+            optimizer (list)
+
+        """
+
+        # Initialization
+        self.accuracy = 0
+        self.param_choices = param_choices
+        self.network = {}
+
+    def create_random(self):
+
+        """ Picks and creates a random network """
+
+        for key in self.param_choices:
+            self.network[key] = random.choice(self.param_choices[key])
+
+    def create_set(self, network):
+
+        """ Connects the network paramaters """
+
+        self.network = network
+
+    def train(self):
+
+        """
+
+        :return: Trained data based on the random network if the data is more accurate
+
+        """
+
+        if self.accuracy == 0:
+            self.accuracy = Train.train_and_score(self.network)
+
+
+# We are now ready to implement the genetic algorithm
+from functools import reduce
+from operator import add
+
+
+class GAOptomizer:
+
+    """ Implements Genetic Algorithm to optomize hyperparameters on MNIST Data"""
+
+    def __init__(self, param_choices, retain_pop=0.4, mutation_frac=0.4, mutation_scale=0.05):
+
+        """
+
+        :param param_choices: (dict) hyperparameters
+        :param retain_pop: (float) percentage of the population to retain after each generation
+        :param mutation_frac: (float) probability of a rejected network after a generation. Noise Variance
+        :param mutation_scale: (float) percentage chance that a network will be mutated
+
+        """
+
+        self.param_choices = param_choices
+        self.retain_pop = retain_pop
+        self.mutation_frac = mutation_frac
+        self.mutation_scale = mutation_scale
+
+    def create_population(self, count):
+
+        """
+
+        Makes a usable population
+
+        :param count: (int) Size of the population
+        :return: (list) The final population
+
+        """
+
+        population = []
+        for _ in range(0, count):
+            network = Network(self.param_choices)
+            network.create_random()
+
+            # Creates the random Network
+            population.append(network)
+
+    @staticmethod
+    def fitness(network):
+        """
+
+        :param network: (dict) Hyperparameters
+        :return: The accuracy
+
+        """
+
+        return network.accuracy
+
+    def grade(self, pop):
+
+        """
+
+        Produces the average fitness of the network
+
+        :param pop: (list) population of networks
+        :return: (float) Average accuracy of the population
+
+        """
+
+        sumtotal = reduce(add, (self.fitness(network) for network in pop))
+        return sumtotal / float((len(pop)))
+
+    def breed(self, mother, father):
+
+        """
+
+        Makes 2 children from the mother and father network
+
+        :param mother: (dict) Mother network
+        :param father: (dict Father network
+        :return: (dict) The child network
+
+        """
+
+        children = []
+
+        for _ in range(2):
+
+            child = {}
+
+            for param in self.param_choices:
+                child[param] = random.choice([mother.network[param], father.network[param]])
+
+            network = Network(self.param_choices)
+            network.create_set(child)
+
+            if self.mutation_frac > random.random():
+                network = self.mutate(network)
+
+            children.append(network)
+
+        return children
+
+    def mutate(self, network):
+
+        """
+
+        Randomly mutates a single part of the network
+
+        :param network: (dict) Hyperparameter dictionary
+        :return: (dict) Mutated network
+
+        """
+
+        # Randomly mutate
+        mutation = random.choice(list(self.param_choices.keys()))
+
+        # Mutate a parameter
+        network.network[mutation] = random.choice(self.param_choices[mutation])
+
+        return network
+
+    def evolve(self, pop):
+
+        """
+
+        Evolves the population based on average fitness.
+
+        :param pop: Generation to evolve
+        :return: The evolved generation
+
+        """
+
+        # Gives a fitness value for an arbitrary network, along with that specific network
+        graded = [(self.fitness(network), network) for network in pop]
+
+        # Sort the scores to have the best (largest) fitness function at the top
+        graded = [x[1] for x in sorted(graded, key=lambda x:[0], reverse=True)]
+
+        # The number of parents we want to keep
+        retain_length = int(len(graded)*self.retain_pop)
+
+        # The parents we want to keep up to the retain_length index
+        incestuous_parents = graded[:retain_length]
+
+        for individual in graded[retain_length:]:
+            if self.random_select > random.random():
+                incestuous_parents.append(individual)
+
+        parents_length = len(incestuous_parents)
+        desired_length = len(pop) - parents_length
+        children = []
+
+        while len(children) < desired_length:
+
+            new_mom = random.randint(0, parents_length-1)
+            new_dad = random.randint(0, parents_length)
+
+            if new_mom != new_dad:
+                new_mom = incestuous_parents[new_mom]
+                new_dad = incestuous_parents[new_dad]
+
+                babies = self.breed(new_mom, new_dad)
+
+                for baby in babies:
+                    if len(children) < desired_length:
+                        children.append(baby)
+        incestuous_parents.extend(children)
+
+        return incestuous_parents
+
+
+class TheGAAlgorithm:
+
+    def train_network(self, networks, dataset):
+        """
+
+        Train each of the Networks from the dictionary
+
+        :param networks: (dict) Hyperparameters
+        :param dataset: Set of MNIST data
+        :return: Data trained on the network
+
+        """
+
+        for network in networks:
+            network.train(dataset)
+
+    def get_average_accuracy(self, networks):
+        """
+
+        Get the average accuracy of the group of networks
+
+        :param networks: (dict) Hyperparameters
+        :return: average accuracy
+
+        """
+
+        total_accuracy = 0
+        for network in networks:
+            total_accuracy += networks.accuracy
+
+        return total_accuracy / len(networks)
+
+    def generate(self, param_choices, dataset, generations, population):
+        """
+
+
+        :param generations:
+        :param population:
+        :param param_choices:
+        :param dataset:
+        :return:
+
+        """
+        GA = TheGAAlgorithm()
+
+        optimizer = GAOptomizer(param_choices)
+        networks = optimizer.create_population(population)
+
+        for i in range(generations):
+
+            GA.train_network(networks, dataset)
+
+            average_accuracy = TheGAAlgorithm.get_average_accuracy(networks)
+
+            if i != generations - 1:
+                networks = optimizer.evolve(networks)
+
+        # Sort largest accuracy to the top
+        networks = sorted(networks, key=lambda x: x.accuracy, reverse=True)
+
+        # Print the top 5 network accuracies
+        print(networks[:5])
+
+    def print_network(self, networks):
+        for network in networks:
+            network.print_network()
+
+
+def main():
+    """
+
+    :return: Evolved Network
+
+    """
+    GA = TheGAAlgorithm()
+
+    generations = 10
+    population = 20
+    dataset = np.c_[X_train_PCA, Y_train]
+
+    param_choices = {
+        'nb_neurons': [64, 128, 256, 512, 768, 1024],
+        'nb_layers': [1, 2, 3, 4],
+        'activation': ['relu', 'elu', 'tanh', 'sigmoid'],
+        'optimizer': ['rmsprop', 'adam', 'sgd', 'adagrad',
+                      'adadelta', 'adamax', 'nadam'],
+    }
+
+    return GA.generate(generations, population, param_choices, dataset)
+
+
+main()
